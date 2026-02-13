@@ -157,22 +157,7 @@ function plugin_yagp_getAddSearchOptions($itemtype): array
  */
 function Plugin_Yagp_addDefaultJoin($in): array
 {
-    list($itemtype, $out) = $in;
-
-    if (!PluginYagpProfile::getAllocatorPermission()) {
-        return [$itemtype, $out];
-    }
-
-    if (isset($in[0]) && $in[0] == Ticket::class) {
-        $uri = $_SERVER['REQUEST_URI'] ?? '';
-        if (preg_match('/\/front\/ticket/', $uri) || preg_match('/\/ajax\/search.*itemtype=Ticket/', $uri)) {
-            $new_condition = PluginYagpProfile::getAllocatorSQLTickets();
-            $current_out = is_array($out) ? implode(" ", $out) : (string)$out;
-            $out = $current_out . " INNER JOIN $new_condition `yagp` ON `yagp`.`tickets_id` = `glpi_tickets`.`id` ";
-        }
-    }
-
-    return [$itemtype, $out];
+    return is_array($in) ? $in : [];
 }
 
 /**
@@ -183,25 +168,32 @@ function Plugin_Yagp_addDefaultJoin($in): array
  */
 function Plugin_Yagp_addDefaultWhere(array $in): array
 {
-    if (!PluginYagpProfile::getAllocatorPermission()) {
-        return $in;
+    if (!is_array($in) || count($in) < 2) {
+        return is_array($in) ? $in : [];
     }
 
-    if (isset($in[0]) && $in[0] == Ticket::class && isset($_SERVER['REQUEST_URI'])) {
-        if (
-            isset($in[1]) &&
-            (preg_match('/\/front\/ticket/', $_SERVER['REQUEST_URI']) ||
-                preg_match('/\/ajax\/search.*itemtype=Ticket/', $_SERVER['REQUEST_URI']))
-        ) {
-            $condition = "`glpi_tickets`.`status`='1'";
-            $new_condition = "(`glpi_tickets`.`status`='1' AND `yagp`.`assoc` IS NOT NULL)";
-            // replace condition
-            $in[1] = str_replace($condition, $new_condition, $in[1]);
-            $in[1] .= " AND `yagp`.`assoc` IS NOT NULL";
+    $itemtype = $in[0];
+    $where    = $in[1];
+
+    if (!PluginYagpProfile::getAllocatorPermission()) {
+        return [$itemtype, $where];
+    }
+
+    if ($itemtype === Ticket::class) {
+        $allocatorSQL = PluginYagpProfile::getAllocatorSQLTickets();
+        $subquery = "SELECT `tickets_id` FROM ($allocatorSQL) as `yagp_filter`";
+
+        $condition = "`glpi_tickets`.`id` IN ($subquery)";
+
+        if (is_array($where)) {
+            $where[] = $condition;
+        }
+        else if (is_string($where)) {
+            $where .= " AND $condition";
         }
     }
 
-    return $in;
+    return [$itemtype, $where];
 }
 
 /**
